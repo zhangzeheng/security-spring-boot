@@ -1,0 +1,195 @@
+认证-----》
+会话-----》
+授权-----》
+
+授权的数据模型----》
+RBAC----->基于角色/基于资源
+
+session--->sessionId--->
+
+springboot-->整合interceptor
+
+
+@Configuration
+@EnableWebMvc
+public class WebConfig implements WebMvcConfigurer {
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+      registry.addInterceptor(new SimpleAuthenticationInterceptor()).addPathPatterns("/**").excludePathPatterns("/hello");
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/**").addResourceLocations("classpath:/tx_static");
+    }
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addViewController("/tx_index").setViewName("index");
+    }
+
+    @Override
+    public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
+    //定义一个消息转换器
+     FastJsonHttpMessageConverter f=new FastJsonHttpMessageConverter();
+        FastJsonConfig fastJsonConfig=new FastJsonConfig();
+        fastJsonConfig.setSerializerFeatures(SerializerFeature.PrettyFormat);
+
+        List<MediaType> fastMediaTypes=new ArrayList<>();
+        fastMediaTypes.add(MediaType.APPLICATION_JSON_UTF8);
+        f.setSupportedMediaTypes(fastMediaTypes);
+        f.setFastJsonConfig(fastJsonConfig);
+        converters.add(0,f);
+    }
+
+
+public class SimpleAuthenticationInterceptor implements HandlerInterceptor {
+    //在这个方法中校验用户请求的url是否在用户的权限范围内
+    //取出用户身份信息
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        System.out.println("----interceptor----");
+        Object object = request.getSession().getAttribute(UserDto.SESSION_USER_KEY);
+        if (object == null) {
+            writeContent(response, "请登录");
+        }
+        UserDto userDto = (UserDto) object;
+        String requestUrl = request.getRequestURI();
+        if (userDto.getAuthorities().contains("p1") && requestUrl.contains("/r/r1")) {
+            return true;
+        }
+        if (userDto.getAuthorities().contains("p2") && requestUrl.contains("/r/r2")) {
+            return true;
+        }
+        writeContent(response, "没有权限，拒绝访问");
+
+        return false;
+    }
+
+    //响应信息给客户端
+    private void writeContent(HttpServletResponse response, String msg) throws IOException {
+        response.setContentType("text/html;charset=utf-8");
+        PrintWriter writer = response.getWriter();
+        writer.print(msg);
+        writer.close();
+    }
+
+spring security--->学习文档
+Filter--->通过这个拦劫
+Aop----->
+
+FilterChainProxy--->生成很多个Filter-->
+AuthenticationManager---》用户身份
+AccessDecisitionManager--->权限
+
+UsernamePasswordAuthenticationFilter-->用户认证
+FilterSecurityInterceptor--->用户授权
+
+认证流程------》
+
+1. 用户提交用户名、密码被SecurityFilterChain中的UsernamePasswordAuthenticationFilter过滤器获取到，
+封装为请求Authentication，通常情况下是UsernamePasswordAuthenticationToken这个实现类。
+2. 然后过滤器将Authentication提交至认证管理器（AuthenticationManager）进行认证
+3. 认证成功后，AuthenticationManager身份管理器返回一个被填充满了信息的
+（包括上面提到的权限信息，身份信息，细节信息，但密码通常会被移除）
+Authentication实例。
+4. SecurityContextHolder安全上下文容器将第3步填充了信息的Authentication，
+通过SecurityContextHolder.getContext().setAuthentication(…)方法，设置到其中。
+可以看出AuthenticationManager接口（认证管理器）是认证相关的核心接口，也是发起认证的出发点，
+它的实现类为ProviderManager。而Spring Security支持多种认证方式，
+因此ProviderManager维护着一个List<AuthenticationProvider>列表，
+存放多种认证方式，最终实际的认证工作是由AuthenticationProvider完成的。
+咱们知道web表单的对应的AuthenticationProvider实现类为DaoAuthenticationProvider，
+它的内部又维护着一个UserDetailsService负责UserDetails的获取。
+最终AuthenticationProvider将UserDetails填充至Authentication。
+
+UserDetailsService---->
+AuthenticationProvider---->认证流程
+
+passwordEncoder---->
+BCryptPasswordEncoder----->
+
+授权流程-----》
+
+  Spring Security内置了三个基于投票的AccessDecisionManager实现类如下，
+它们分别是AffirmativeBased、ConsensusBased和UnanimousBased，。      
+AffirmativeBased的逻辑是：      ----默认
+（1）只要有AccessDecisionVoter的投票为ACCESS_GRANTED则同意用户进行访问；      
+（2）如果全部弃权也表示通过；      
+ （3）如果没有一个人投赞成票，但是有人投反对票，则将抛出AccessDeniedException。
+ Spring security默认使用的是AffirmativeBased。       ConsensusBased的逻辑是
+ ：       （1）如果赞成票多于反对票则表示通过。      
+ （2）反过来，如果反对票多于赞成票则将抛出AccessDeniedException。      
+ （3）如果赞成票与反对票相同且不等于0，并且属性allowIfEqualGrantedDeniedDecisions的值为true，
+ 则表示通过，否则将抛出异常AccessDeniedException。参数allowIfEqualGrantedDeniedDecisions的值默认为true。
+ public interface AccessDecisionVoter<S> {    int ACCESS_GRANTED = 1;    int ACCESS_ABSTAIN = 0;    int ACCESS_DENIED = ‐1;     boolean supports(ConfigAttribute var1);     boolean supports(Class<?> var1);     int vote(Authentication var1, S var2, Collection<ConfigAttribute> var3);}北京市昌平区建材城西路金燕龙办公楼一层 电话：400-618-9090       （4）如果所有的AccessDecisionVoter都弃权了，则将视参数allowIfAllAbstainDecisions的值而定，如果该值为true则表示通过，否则将抛出异常AccessDeniedException。参数allowIfAllAbstainDecisions的值默认为false。      
+UnanimousBased的逻辑与另外两种实现有点不一样
+，另外两种会一次性把受保护对象的配置属性全部传递给AccessDecisionVoter进行投票，
+而UnanimousBased会一次只传递一个ConfigAttribute给AccessDecisionVoter进行投票。
+这也就意味着如果我们的AccessDecisionVoter的逻辑是只要传递进来的ConfigAttribute中有一个能够匹配则投赞成票
+，但是放到UnanimousBased中其投票结果就不一定是赞成了。UnanimousBased的逻辑具体来说是这样的：
+       （1）如果受保护对象配置的某一个ConfigAttribute被任意的AccessDecisionVoter反对了，
+则将抛出AccessDeniedException。       （2）如果没有反对票，但是有赞成票，则表示通过
+。       （3）如果全部弃权了，则将视参数allowIfAllAbstainDecisions的值而定，true则通过，
+false则抛出AccessDeniedException。Spring Security也内置一些投票者实现类如RoleVoter、
+AuthenticatedVoter和WebExpressionVoter等
+
+
+自定义登录----》
+
+会话管理----》
+
+
+SELECT
+  *
+FROM
+  t_permission
+WHERE id IN
+  (SELECT
+    permission_id
+  FROM
+    t_role_permission
+  WHERE role_id IN
+    (SELECT
+      role_id
+    FROM
+      t_user_role
+    WHERE user_id = '1'))
+
+
+
+    web--->授权
+    方法授权---》统一认证授权
+
+    分布式系统认证---->
+    基于session的认证方式在分布式的环境下，基于session的认证会出现一个问题，每个应用服务都需要在session中存储用户身份信息，
+    通过负载均衡将本地的请求分配到另一个应用服务需要将session信息带过去，否则会重新认证。
+
+    这个时候，通常的做法有下面几种：
+    Session复制：多台应用服务器之间同步session，使session保持一致，对外透明。
+    Session黏贴：当用户访问集群中某台服务器后，强制指定后续所有请求均落到此机器上。
+    Session集中存储：将Session存入分布式缓存中，所有服务器应用实例统一从分布式缓存中存取Session。
+    总体来讲，基于session认证的认证方式，可以更好的在服务端对会话进行控制，且安全性较高。
+    但是，session机制方式基于cookie，在复杂多样的移动客户端上不能有效的使用，
+    并且无法跨域，另外随着系统的扩展需提高session的复制、黏贴及存储的容错性。
+
+    2、基于token的认证方式基于token的认证方式，服务端不用存储认证数据，易维护扩展性强，
+     客户端可以把token 存在任意地方，并且可以实现web和app统一认证机制。其缺点也很明显，token由于自包含信息，因此一般数据量较大，
+    而且每次请求都需要传递，因此比较占带宽。另外，token的签名验签操作也会给cpu带来额外的处理负担。
+    5.3.2 技术方案 根据 选型的分析，决定采用基于token的认证方式，它的优点是：
+    1、适合统一认证的机制，客户端、一方应用、三方应用都遵循一致的认证机制。2、token认证方式对第三方应用接入更适合，
+    因为它更开放，可使用当前有流行的开放协议Oauth2.0、JWT等。3、一般情况服务端无需存储会话信息，减轻了服务端的压力。
+
+
+   流程描述：（1）用户通过接入方（应用）登录，接入方采取OAuth2.0方式在统一认证服务(UAA)中认证。
+   （2）认证服务(UAA)调用验证该用户的身份是否合法，并获取用户权限信息。
+   （3）认证服务(UAA)获取接入方权限信息，并验证接入方是否合法。
+   （4）若登录用户以及接入方都合法，认证服务生成jwt令牌返回给接入方，其中jwt中包含了用户权限及接入方权限。-----以上网关
+   （5）后续，接入方携带jwt令牌对API网关内的微服务资源进行访问。
+   （6）API网关对令牌解析、并验证接入方的权限是否能够访问本次请求的微服务。
+   （7）如果接入方的权限没问题，API网关将原请求header中附加解析后的明文Token，并将请求转发至微服务。
+   （8）微服务收到请求，明文token中包含登录用户的身份和权限信息。因此后续微服务自己可以干两件事：
+   1，用户授权拦截（看当前用户是否有权访问该资源）2，将用户信息存储进当前线程上下文（有利于后续业务逻辑随时获取当前用户信息）
+   流程所涉及到UAA服务、API网关这三个组件职责如下：
+
+   网关---认证服务token---访问微服务
